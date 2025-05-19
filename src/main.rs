@@ -3,13 +3,13 @@ use number_prefix::NumberPrefix;
 use std::{fmt::Debug, fs, path::Path};
 
 #[derive(Parser, Debug)]
-#[command(version = "1.0", about = "Estimate file space usage", long_about = None)]
+#[command(version = None, about = "Estimate file space usage", long_about = None)]
 struct Args {
-    /// Vector of files/directories to analyze
+    /// files/directories to analyze
     #[arg(value_name = "file")]
     files: Vec<String>,
 
-    /// The maximum print depth
+    /// maximum print depth
     #[arg(short, value_parser = clap::value_parser!(u32).range(0..))]
     depth: Option<u32>,
 }
