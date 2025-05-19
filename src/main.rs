@@ -3,7 +3,7 @@ use number_prefix::NumberPrefix;
 use std::{fmt::Debug, fs, path::Path};
 
 #[derive(Parser, Debug)]
-#[command(version = "1.0", about, long_about = None)]
+#[command(version = "1.0", about = "Estimate file space usage", long_about = None)]
 struct Args {
     /// Vector of files/directories to analyze
     #[arg(value_name = "file")]
