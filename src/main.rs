@@ -5,17 +5,17 @@ use std::{fmt::Debug, fs, path::Path};
 #[derive(Parser, Debug)]
 #[command(version = "1.0", about, long_about = None)]
 struct Args {
-    /// Name of the person to greet
+    /// Vector of files/directories to analyze
     #[arg(value_name = "file")]
     files: Vec<String>,
 
-    /// Number of times to greet
-    #[arg(short)]
-    depth: Option<usize>,
+    /// The maximum print depth
+    #[arg(short, value_parser = clap::value_parser!(u32).range(0..))]
+    depth: Option<u32>,
 }
 
 struct Options {
-    max_depth: Option<usize>,
+    max_depth: Option<u32>,
 }
 
 fn main() {
@@ -32,7 +32,7 @@ fn main() {
     }
 }
 
-fn get_size<P: AsRef<Path> + Debug>(dir: P, options: &Options, depth: usize) -> u64 {
+fn get_size<P: AsRef<Path> + Debug>(dir: P, options: &Options, depth: u32) -> u64 {
     if let Ok(meta) = fs::metadata(&dir) {
         if !meta.is_dir() {
             let size = meta.len();
