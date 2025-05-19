@@ -33,45 +33,54 @@ fn main() {
 }
 
 fn get_size<P: AsRef<Path> + Debug>(dir: P, options: &Options, depth: u32) -> u64 {
-    if let Ok(meta) = fs::metadata(&dir) {
-        if !meta.is_dir() {
-            let size = meta.len();
+    // If dir is actually a file
+    match fs::metadata(&dir) {
+        Ok(meta) => {
+            if !meta.is_dir() {
+                let size = meta.len();
 
-            if depth == 0 {
-                print_size(size as f64, dir.as_ref().as_os_str().to_str().unwrap());
+                // Only if we are giving as an argument a file print the file stats
+                if depth == 0 {
+                    print_size(size, dir.as_ref().as_os_str().to_str().unwrap());
+                }
+
+                return size;
             }
-
-            return size;
         }
-    } else {
-        eprintln!("Could not get metadata for {:?}", dir);
-        return 0;
-    }
-
-    let mut size: u64 = 0;
-
-    let paths = fs::read_dir(&dir);
-    if paths.is_err() {
-        return size;
-    }
-    for path in paths.unwrap() {
-        match path {
-            Ok(path) => {
-                size += get_size(path.path(), options, depth + 1);
-            }
-            Err(_) => {}
+        Err(_) => {
+            eprintln!("Could not get metadata for {:?}", dir);
+            return 0;
         }
     }
 
-    if options.max_depth.is_none() || options.max_depth.unwrap() >= depth {
-        print_size(size as f64, dir.as_ref().as_os_str().to_str().unwrap());
-    }
+    // If actually a dir
+    match fs::read_dir(&dir) {
+        Ok(paths) => {
+            let size = paths
+                .map(|path| {
+                    if let Ok(path) = path {
+                        return get_size(path.path(), options, depth + 1);
+                    }
+                    0
+                })
+                .sum();
 
-    size
+            // If no limit is set
+            // If we are still within limit
+            // Then print the size of the current folder
+            if options.max_depth.is_none() || options.max_depth.unwrap() >= depth {
+                print_size(size, dir.as_ref().as_os_str().to_str().unwrap());
+            }
+
+            size
+        }
+        Err(_) => 0,
+    }
 }
 
-fn print_size(size: f64, path: &str) {
-    match NumberPrefix::decimal(size) {
+fn print_size(size: u64, path: &str) {
+    // Possible loss of digits
+    match NumberPrefix::decimal(size as f64) {
         NumberPrefix::Standalone(bytes) => {
             println!("{:<10} {}", format!("{} bytes", bytes), path)
         }
