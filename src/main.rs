@@ -44,6 +44,8 @@ fn get_size<P: AsRef<Path> + Debug>(dir: P, options: &Options, depth: u32) -> u6
         Ok(meta) => {
             if !meta.is_dir() {
                 #[cfg(not(target_os = "windows"))]
+                use std::os::unix::fs::MetadataExt;
+                #[cfg(not(target_os = "windows"))]
                 let size = meta.blocks() * 512;
                 #[cfg(target_os = "windows")]
                 let size = get_size_on_disk(dir.as_ref());
