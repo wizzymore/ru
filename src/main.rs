@@ -43,11 +43,11 @@ fn get_size<P: AsRef<Path> + Debug>(dir: P, options: &Options, depth: u32) -> u6
     match fs::metadata(&dir) {
         Ok(meta) => {
             if !meta.is_dir() {
-                #[cfg(not(target_os = "windows"))]
+                #[cfg(not(windows))]
                 use std::os::unix::fs::MetadataExt;
-                #[cfg(not(target_os = "windows"))]
+                #[cfg(not(windows))]
                 let size = meta.blocks() * 512;
-                #[cfg(target_os = "windows")]
+                #[cfg(windows)]
                 let size = get_size_on_disk(dir.as_ref());
                 // Only if we are giving as an argument a file print the file stats
                 if depth == 0 {
@@ -106,7 +106,11 @@ fn get_size<P: AsRef<Path> + Debug>(dir: P, options: &Options, depth: u32) -> u6
 
 fn print_size(size: u64, path: &str) {
     // Possible loss of digits
-    match NumberPrefix::binary(size as f64) {
+    #[cfg(not(windows))]
+    let prefix = NumberPrefix::decimal(size as f64);
+    #[cfg(windows)]
+    let prefix = NumberPrefix::binary(size as f64);
+    match prefix {
         NumberPrefix::Standalone(bytes) => {
             println!("{:<10} {}", format!("{}", bytes), path)
         }
