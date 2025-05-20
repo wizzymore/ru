@@ -146,6 +146,7 @@ version = "0.1.0"
 dependencies = [
  "clap",
  "number_prefix",
+ "windows-sys",
 ]
 
 [[package]]
