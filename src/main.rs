@@ -1,6 +1,6 @@
 use clap::Parser;
-use number_prefix::NumberPrefix;
-use std::{fmt::Debug, fs, path::Path};
+use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
+use std::{fmt::Debug, fs, path::Path, usize};
 
 #[derive(Parser, Debug)]
 #[command(version = None, about = "Estimate file space usage", long_about = None)]
@@ -10,8 +10,8 @@ struct Args {
     files: Vec<String>,
 
     /// maximum print depth
-    #[arg(short, value_parser = clap::value_parser!(u32).range(0..))]
-    depth: Option<u32>,
+    #[arg(short, default_value_t = usize::MAX)]
+    depth: usize,
 
     /// print bytes
     #[arg(short, default_value_t = false)]
@@ -19,7 +19,7 @@ struct Args {
 }
 
 struct Options {
-    max_depth: Option<u32>,
+    max_depth: usize,
     bytes: bool,
 }
 
@@ -38,11 +38,11 @@ fn main() {
     }
 }
 
-fn get_size<P: AsRef<Path> + Debug>(dir: P, options: &Options, depth: u32) -> u64 {
+fn get_size<P: AsRef<Path> + Debug>(dir: P, options: &Options, depth: usize) -> u64 {
     // If dir is actually a file
-    match fs::metadata(&dir) {
+    let m = match fs::symlink_metadata(&dir) {
         Ok(meta) => {
-            if !meta.is_dir() {
+            if meta.is_file() {
                 #[cfg(not(windows))]
                 use std::os::unix::fs::MetadataExt;
                 #[cfg(not(windows))]
@@ -51,73 +51,58 @@ fn get_size<P: AsRef<Path> + Debug>(dir: P, options: &Options, depth: u32) -> u6
                 let size = get_size_on_disk(dir.as_ref());
                 // Only if we are giving as an argument a file print the file stats
                 if depth == 0 {
-                    if options.bytes {
-                        println!(
-                            "{:<10} {}",
-                            size,
-                            dir.as_ref().as_os_str().to_str().unwrap()
-                        )
-                    } else {
-                        print_size(size, dir.as_ref().as_os_str().to_str().unwrap());
-                    }
+                    print_size(size, dir.as_ref().display(), options.bytes);
                 }
 
                 return size;
             }
+            meta
         }
         Err(_) => {
-            eprintln!("Could not get metadata for {:?}", dir);
             return 0;
         }
-    }
+    };
 
     // If actually a dir
-    match fs::read_dir(&dir) {
-        Ok(paths) => {
-            let size = paths
-                .map(|path| {
-                    if let Ok(path) = path {
-                        return get_size(path.path(), options, depth + 1);
-                    }
-                    0
-                })
-                .sum();
+    if m.is_dir() {
+        let entries = match fs::read_dir(&dir) {
+            Ok(paths) => paths.collect::<Vec<_>>(),
+            Err(_) => return 0,
+        };
 
-            // If no limit is set
-            // If we are still within limit
-            // Then print the size of the current folder
-            if options.max_depth.is_none() || options.max_depth.unwrap() >= depth {
-                if options.bytes {
-                    println!(
-                        "{:<10} {}",
-                        size,
-                        dir.as_ref().as_os_str().to_str().unwrap()
-                    )
-                } else {
-                    print_size(size, dir.as_ref().as_os_str().to_str().unwrap());
-                }
-            }
+        let size = entries
+            .par_iter()
+            .filter_map(|res| res.as_ref().ok())
+            .map(|entry| get_size(entry.path(), &options, depth + 1))
+            .sum();
 
-            size
+        if options.max_depth >= depth {
+            print_size(size, dir.as_ref().display(), options.bytes);
         }
-        Err(_) => 0,
+
+        return size;
     }
+
+    0
 }
 
-fn print_size(size: u64, path: &str) {
-    // Possible loss of digits
-    #[cfg(not(windows))]
-    let prefix = NumberPrefix::decimal(size as f64);
-    #[cfg(windows)]
-    let prefix = NumberPrefix::binary(size as f64);
-    match prefix {
-        NumberPrefix::Standalone(bytes) => {
-            println!("{:<10} {}", format!("{}", bytes), path)
-        }
-        NumberPrefix::Prefixed(prefix, n) => {
-            println!("{:<10} {}", format!("{:.1}{}B", n, prefix), path)
-        }
-    };
+fn print_size<T: std::fmt::Display>(size: u64, path: T, print_bytes: bool) {
+    if print_bytes {
+        println!("{:<10} {}", size, path);
+    } else {
+        #[cfg(windows)]
+        println!(
+            "{:<8} {}",
+            humansize::format_size(size, humansize::BINARY),
+            path
+        );
+        #[cfg(not(windows))]
+        println!(
+            "{:<8} {}",
+            humansize::format_size(size, humansize::DECIMAL),
+            path
+        );
+    }
 }
 
 #[cfg(windows)]
