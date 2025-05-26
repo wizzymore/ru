@@ -90,13 +90,13 @@ fn print_size<T: std::fmt::Display>(size: u64, path: T, print_bytes: bool) {
     if print_bytes {
         println!("{:<10} {}", size, path);
     } else {
-        #[cfg(windows)]
+        #[cfg(target_os = "linux")]
         println!(
             "{:<8} {}",
             humansize::format_size(size, humansize::BINARY),
             path
         );
-        #[cfg(not(windows))]
+        #[cfg(not(target_os = "linux"))]
         println!(
             "{:<8} {}",
             humansize::format_size(size, humansize::DECIMAL),
