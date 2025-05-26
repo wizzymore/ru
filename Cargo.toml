@@ -13,3 +13,18 @@ windows-sys = { version = "0.59.0", features = [
     "Win32_Storage_FileSystem",
     "Win32_Foundation",
 ] }
+
+# We use `opt-level = "s"` as it significantly reduces binary size.
+# We could then use the `#[optimize(speed)]` attribute for spot optimizations.
+# Unfortunately, that attribute currently doesn't work on intrinsics such as memset.
+[profile.release]
+lto = true                  # reduces binary size by ~10%
+opt-level = "s"             # reduces binary size by ~25%
+panic = "abort"             # reduces binary size by ~18%
+split-debuginfo = "packed"  # generates a separate *.dwp/*.dSYM so the binary can get stripped
+strip = "symbols"           # See split-debuginfo - allows us to drop the size by ~65%
+incremental = true          # Improves re-compile times
+
+# Enable a small amount of optimization in the dev profile.
+[profile.dev]
+opt-level = 1
