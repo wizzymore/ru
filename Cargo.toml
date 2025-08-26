@@ -6,10 +6,11 @@ edition = "2024"
 [dependencies]
 clap = { version = "4.5.38", features = ["derive"] }
 humansize = "2"
+ignore = "0.4.23"
 rayon = "1.10.0"
 
 [target.'cfg(target_os = "windows")'.dependencies]
-windows-sys = { version = "0.59.0", features = [
+windows-sys = { version = "0.60.2", features = [
     "Win32_Storage_FileSystem",
     "Win32_Foundation",
 ] }

@@ -1,6 +1,12 @@
 use clap::Parser;
-use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
-use std::{fmt::Debug, fs, path::Path, usize};
+use ignore::gitignore::Gitignore;
+use rayon::prelude::*;
+use std::{
+    fmt::Debug,
+    fs,
+    path::{Path, PathBuf},
+    usize,
+};
 
 #[derive(Parser, Debug)]
 #[command(version = None, about = "Estimate file space usage", long_about = None)]
@@ -10,80 +16,145 @@ struct Args {
     files: Vec<String>,
 
     /// maximum print depth
-    #[arg(short, default_value_t = usize::MAX)]
+    #[arg(short, default_value_t = 1)]
     depth: usize,
 
     /// print bytes
     #[arg(short, default_value_t = false)]
     bytes: bool,
+
+    /// sort sizes
+    #[arg(long, default_value_t = false)]
+    sort: bool,
+
+    /// use .gitignore file for printing sizes
+    #[arg(long, short, default_value_t = false)]
+    ignore: bool,
 }
 
 struct Options {
     max_depth: usize,
     bytes: bool,
+    sort: bool,
+    ignore: bool,
+}
+
+#[derive(Debug)]
+struct Entry {
+    size: u64,
+    path: PathBuf,
+    hidden: bool,
+    children: Vec<Entry>, // empty for files
 }
 
 fn main() {
-    let args = Args::parse();
+    let mut args = Args::parse();
     let options = Options {
         max_depth: args.depth,
         bytes: args.bytes,
+        sort: args.sort,
+        ignore: args.ignore,
     };
+
     if args.files.is_empty() {
-        get_size(".", &options, 0);
+        args.files.push(".".to_string());
     }
 
-    for path in args.files {
-        get_size(path, &options, 0);
+    for path in &args.files {
+        let (gitignore, _) = Gitignore::new(Path::new(path).join(".gitignore").as_path());
+
+        if let Some(mut root_entry) = compute_size(path, &options, &gitignore) {
+            // Step 2: print them according to options
+            print_entry(&mut root_entry, &options, 0);
+        }
     }
 }
 
-fn get_size<P: AsRef<Path> + Debug>(dir: P, options: &Options, depth: usize) -> u64 {
-    // If dir is actually a file
-    let m = match fs::symlink_metadata(&dir) {
-        Ok(meta) => {
-            if meta.is_file() {
-                #[cfg(not(windows))]
-                use std::os::unix::fs::MetadataExt;
-                #[cfg(not(windows))]
-                let size = meta.blocks() * 512;
-                #[cfg(windows)]
-                let size = get_size_on_disk(dir.as_ref());
-                // Only if we are giving as an argument a file print the file stats
-                if depth == 0 {
-                    print_size(size, dir.as_ref().display(), options.bytes);
-                }
+fn compute_size<P: AsRef<Path>>(
+    path: P,
+    options: &Options,
+    gitignore: &Gitignore,
+) -> Option<Entry> {
+    let path = path.as_ref().to_path_buf();
+    let meta = fs::symlink_metadata(&path).ok()?;
 
-                return size;
+    let hidden = match options.ignore {
+        true => {
+            let mut hidden = gitignore.matched(&path, meta.is_dir()).is_ignore();
+
+            if !hidden {
+                #[cfg(windows)]
+                {
+                    use std::os::windows::fs::MetadataExt;
+
+                    hidden = meta.file_attributes() & 0x2 != 0
+                }
+                #[cfg(not(windows))]
+                {
+                    hidden = path
+                        .file_name()
+                        .and_then(|name| name.to_str())
+                        .map(|name| name.starts_with("."))
+                        .unwrap_or(false);
+                }
             }
-            meta
+
+            hidden
         }
-        Err(_) => {
-            return 0;
-        }
+        false => false,
     };
 
-    // If actually a dir
-    if m.is_dir() {
-        let entries = match fs::read_dir(&dir) {
-            Ok(paths) => paths.collect::<Vec<_>>(),
-            Err(_) => return 0,
-        };
+    if meta.is_file() {
+        #[cfg(not(windows))]
+        use std::os::unix::fs::MetadataExt;
+        #[cfg(not(windows))]
+        let size = meta.blocks() * 512;
+        #[cfg(windows)]
+        let size = get_size_on_disk(&path);
 
-        let size = entries
-            .par_iter()
-            .filter_map(|res| res.as_ref().ok())
-            .map(|entry| get_size(entry.path(), &options, depth + 1))
-            .sum();
-
-        if options.max_depth >= depth {
-            print_size(size, dir.as_ref().display(), options.bytes);
-        }
-
-        return size;
+        return Some(Entry {
+            size,
+            path,
+            children: vec![],
+            hidden,
+        });
     }
 
-    0
+    if meta.is_dir() {
+        let entries = fs::read_dir(&path).ok()?;
+
+        let children: Vec<Entry> = entries
+            .par_bridge()
+            .filter_map(|res| res.ok())
+            .filter_map(|entry| compute_size(entry.path(), options, gitignore))
+            .collect();
+
+        let total = children.iter().map(|c| c.size).sum();
+
+        return Some(Entry {
+            size: total,
+            path,
+            children,
+            hidden,
+        });
+    }
+
+    None
+}
+
+fn print_entry(entry: &mut Entry, options: &Options, depth: usize) {
+    if options.max_depth < depth {
+        return;
+    }
+
+    if options.sort {
+        entry.children.sort_by(|a, b| a.size.cmp(&b.size));
+    }
+
+    for child in &mut entry.children.iter_mut().filter(|entry| !entry.hidden) {
+        print_entry(child, options, depth + 1);
+    }
+    print_size(entry.size, entry.path.display(), options.bytes);
 }
 
 fn print_size<T: std::fmt::Display>(size: u64, path: T, print_bytes: bool) {
@@ -92,13 +163,13 @@ fn print_size<T: std::fmt::Display>(size: u64, path: T, print_bytes: bool) {
     } else {
         #[cfg(target_os = "linux")]
         println!(
-            "{:<8} {}",
+            "{:<10} {}",
             humansize::format_size(size, humansize::BINARY),
             path
         );
         #[cfg(not(target_os = "linux"))]
         println!(
-            "{:<8} {}",
+            "{:<10} {}",
             humansize::format_size(size, humansize::DECIMAL),
             path
         );
