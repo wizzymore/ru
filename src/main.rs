@@ -60,14 +60,20 @@ fn main() {
         args.files.push(".".to_string());
     }
 
-    for path in &args.files {
-        let (gitignore, _) = Gitignore::new(Path::new(path).join(".gitignore").as_path());
+    dbg!(&args.files);
 
-        if let Some(mut root_entry) = compute_size(path, &options, &gitignore) {
-            // Step 2: print them according to options
+    args.files
+        .par_iter()
+        .filter_map(|path| {
+            let (gitignore, _) = Gitignore::new(Path::new(path).join(".gitignore").as_path());
+
+            compute_size(path, &options, &gitignore)
+        })
+        .collect::<Vec<_>>()
+        .iter_mut()
+        .for_each(|mut root_entry| {
             print_entry(&mut root_entry, &options, 0);
-        }
-    }
+        });
 }
 
 fn compute_size<P: AsRef<Path>>(
