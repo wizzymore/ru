@@ -5,7 +5,6 @@ use std::{
     fmt::Debug,
     fs,
     path::{Path, PathBuf},
-    usize,
 };
 
 #[derive(Parser, Debug)]
@@ -69,8 +68,8 @@ fn main() {
         })
         .collect::<Vec<_>>()
         .iter_mut()
-        .for_each(|mut root_entry| {
-            print_entry(&mut root_entry, &options, 0);
+        .for_each(|root_entry| {
+            print_entry(root_entry, &options, 0);
         });
 }
 
@@ -163,7 +162,7 @@ fn print_entry(entry: &mut Entry, options: &Options, depth: usize) {
 
 fn print_size<T: std::fmt::Display>(size: u64, path: T, print_bytes: bool) {
     if print_bytes {
-        println!("{:<10} {}", size, path);
+        println!("{size:<10} {path}");
     } else {
         #[cfg(target_os = "linux")]
         println!(
