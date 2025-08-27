@@ -2,6 +2,13 @@
 name = "ru"
 version = "0.1.0"
 edition = "2024"
+authors = ["Cristian Bilu <cristian@eptic.ro>"]
+homepage = "https://eptic.ro/ru"
+repository = "https://github.com/wizzymore/ru"
+license = "MIT"
+keywords = ["du", "gnu du", "disk space", "file size"]
+categories = ["command-line-utilities"]
+exclude = [".github"]
 
 [dependencies]
 clap = { version = "4.5.38", features = ["derive"] }
@@ -9,7 +16,7 @@ humansize = "2"
 ignore = "0.4.23"
 rayon = "1.10.0"
 
-[target.'cfg(target_os = "windows")'.dependencies]
+[target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.60.2", features = [
     "Win32_Storage_FileSystem",
     "Win32_Foundation",
