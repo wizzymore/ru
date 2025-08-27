@@ -1,0 +1,48 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  #   test:
+  #     strategy:
+  #       matrix:
+  #         os: [windows-latest, ubuntu-latest, macos-latest]
+  #         type: [shared, static]
+  #     runs-on: ${{matrix.os}}
+  #     steps:
+  #       - uses: actions/checkout@v4
+  #       - uses: actions/cache@v4
+  #         with:
+  #           path: |
+  #             ~/.cargo/bin/
+  #             ~/.cargo/registry/index/
+  #             ~/.cargo/registry/cache/
+  #             ~/.cargo/git/db/
+  #             target/
+  #           key: ${{runner.os}}-cargo-build-${{matrix.type}}-${{ hashFiles('**/Cargo.toml') }}
+  #       - name: Run doc tests
+  #         run: cargo test --doc --verbose
+  #       - name: Run tests shared
+  #         run: cargo test --verbose
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{runner.os}}-cargo-lint-${{ hashFiles('**/Cargo.toml') }}
+      - name: Run clippy
+        run: cargo clippy --workspace --all-targets
+      - name: Check format
+        run: cargo fmt --all -- --check
