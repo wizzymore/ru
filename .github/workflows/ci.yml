@@ -30,7 +30,10 @@ jobs:
   #       - name: Run tests shared
   #         run: cargo test --verbose
   lint:
-    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        os: [windows-latest, ubuntu-latest, macos-latest]
+    runs-on: ${{matrix.os}}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/cache@v4

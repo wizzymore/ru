@@ -1,6 +1,8 @@
 use clap::Parser;
 use ignore::gitignore::Gitignore;
 use rayon::prelude::*;
+#[cfg(windows)]
+use std::fs::Metadata;
 use std::{
     fmt::Debug,
     fs,
@@ -39,11 +41,25 @@ struct Options {
 }
 
 #[derive(Debug)]
+enum EntryKind {
+    File(u64),
+    Dir(Vec<Entry>),
+}
+
+#[derive(Debug)]
 struct Entry {
-    size: u64,
     path: PathBuf,
     hidden: bool,
-    children: Vec<Entry>, // empty for files
+    kind: EntryKind,
+}
+
+impl Entry {
+    fn size(&self) -> u64 {
+        match &self.kind {
+            EntryKind::File(size) => *size,
+            EntryKind::Dir(children) => children.iter().map(|e| e.size()).sum(),
+        }
+    }
 }
 
 fn main() {
@@ -60,9 +76,9 @@ fn main() {
     }
 
     args.files
-        .par_iter()
+        .into_par_iter()
         .filter_map(|path| {
-            let (gitignore, _) = Gitignore::new(Path::new(path).join(".gitignore").as_path());
+            let (gitignore, _) = Gitignore::new(Path::new(&path).join(".gitignore").as_path());
 
             compute_size(path, &options, &gitignore)
         })
@@ -78,71 +94,73 @@ fn compute_size<P: AsRef<Path>>(
     options: &Options,
     gitignore: &Gitignore,
 ) -> Option<Entry> {
-    let path = path.as_ref().to_path_buf();
-    let meta = fs::symlink_metadata(&path).ok()?;
+    let path = path.as_ref();
+    let meta = fs::symlink_metadata(path).ok()?;
 
-    let hidden = match options.ignore {
-        true => {
-            let mut hidden = gitignore.matched(&path, meta.is_dir()).is_ignore();
+    let hidden = if options.ignore {
+        #[cfg(windows)]
+        let hidden = gitignore.matched(path, meta.is_dir()).is_ignore() || is_hidden(&meta);
+        #[cfg(not(windows))]
+        let hidden = gitignore.matched(path, meta.is_dir()).is_ignore() || is_hidden(path);
 
-            if !hidden {
-                #[cfg(windows)]
-                {
-                    use std::os::windows::fs::MetadataExt;
-
-                    hidden = meta.file_attributes() & 0x2 != 0
-                }
-                #[cfg(not(windows))]
-                {
-                    hidden = path
-                        .file_name()
-                        .and_then(|name| name.to_str())
-                        .map(|name| name.starts_with("."))
-                        .unwrap_or(false);
-                }
-            }
-
-            hidden
-        }
-        false => false,
+        hidden
+    } else {
+        false
     };
 
     if meta.is_file() {
+        let size;
         #[cfg(not(windows))]
-        use std::os::unix::fs::MetadataExt;
-        #[cfg(not(windows))]
-        let size = meta.blocks() * 512;
+        {
+            use std::os::unix::fs::MetadataExt;
+            size = meta.blocks() * 512;
+        }
         #[cfg(windows)]
-        let size = get_size_on_disk(&path);
+        {
+            size = get_size_on_disk(path);
+        }
 
         return Some(Entry {
-            size,
-            path,
-            children: vec![],
+            path: path.to_path_buf(),
             hidden,
+            kind: EntryKind::File(size),
         });
     }
 
     if meta.is_dir() {
-        let entries = fs::read_dir(&path).ok()?;
+        let entries = fs::read_dir(path).ok()?;
 
         let children: Vec<Entry> = entries
             .par_bridge()
-            .filter_map(|res| res.ok())
-            .filter_map(|entry| compute_size(entry.path(), options, gitignore))
+            .filter_map(|res| {
+                let entry = res.ok()?;
+                compute_size(entry.path(), options, gitignore)
+            })
             .collect();
 
-        let total = children.iter().map(|c| c.size).sum();
-
         return Some(Entry {
-            size: total,
-            path,
-            children,
+            path: path.to_path_buf(),
             hidden,
+            kind: EntryKind::Dir(children),
         });
     }
 
     None
+}
+
+#[cfg(windows)]
+fn is_hidden(meta: &Metadata) -> bool {
+    use std::os::windows::fs::MetadataExt;
+
+    meta.file_attributes() & 0x2 != 0
+}
+
+#[cfg(not(windows))]
+fn is_hidden(path: &Path) -> bool {
+    path.file_name()
+        .and_then(|name| name.to_str())
+        .map(|name| name.starts_with("."))
+        .unwrap_or(false)
 }
 
 fn print_entry(entry: &mut Entry, options: &Options, depth: usize) {
@@ -150,14 +168,18 @@ fn print_entry(entry: &mut Entry, options: &Options, depth: usize) {
         return;
     }
 
-    if options.sort {
-        entry.children.sort_unstable_by(|a, b| a.size.cmp(&b.size));
-    }
+    if let EntryKind::Dir(children) = &mut entry.kind {
+        if options.sort && children.len() > 1 {
+            children.sort_unstable_by_key(|a| a.size());
+        }
 
-    for child in &mut entry.children.iter_mut().filter(|entry| !entry.hidden) {
-        print_entry(child, options, depth + 1);
+        for child in children {
+            if !child.hidden {
+                print_entry(child, options, depth + 1);
+            }
+        }
     }
-    print_size(entry.size, entry.path.display(), options.bytes);
+    print_size(entry.size(), entry.path.display(), options.bytes);
 }
 
 fn print_size<T: std::fmt::Display>(size: u64, path: T, print_bytes: bool) {
@@ -204,7 +226,7 @@ fn get_size_on_disk(path: &Path) -> u64 {
             file.as_raw_handle() as HANDLE,
             FileStandardInfo,
             file_info_ptr.cast(),
-            size_of::<FILE_STANDARD_INFO>() as u32,
+            core::mem::size_of::<FILE_STANDARD_INFO>() as u32,
         );
 
         if success != 0 {
