@@ -6,9 +6,9 @@
 <!-- [<img alt="crates.io" src="https://img.shields.io/crates/v/ru.svg?style=for-the-badge&color=fc8d62&logo=rust" height="20">](https://crates.io/crates/ru) -->
 <!-- [<img alt="docs.rs" src="https://img.shields.io/badge/docs.rs-ru-66c2a5?style=for-the-badge&labelColor=555555&logo=docs.rs" height="20">](https://docs.rs/ru) -->
 
-ru is a simple and easy-to-use cli tool inspired by `du` to find out the size of files/directories.
+ru is a simple and easy-to-use cli tool inspired by `du` to find out the disk usage of files/directories.
 
-The motivation behind this project is to have a safe, performant and cross platform way of measure size of folders and files.
+The motivation behind this project is to have a safe, performant and cross platform way to measure disk usage of folders and files.
 
 ### Usage
 
