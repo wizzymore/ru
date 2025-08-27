@@ -60,8 +60,6 @@ fn main() {
         args.files.push(".".to_string());
     }
 
-    dbg!(&args.files);
-
     args.files
         .par_iter()
         .filter_map(|path| {
