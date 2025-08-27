@@ -148,7 +148,7 @@ fn print_entry(entry: &mut Entry, options: &Options, depth: usize) {
     }
 
     if options.sort {
-        entry.children.sort_by(|a, b| a.size.cmp(&b.size));
+        entry.children.sort_unstable_by(|a, b| a.size.cmp(&b.size));
     }
 
     for child in &mut entry.children.iter_mut().filter(|entry| !entry.hidden) {
