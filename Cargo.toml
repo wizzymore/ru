@@ -12,7 +12,7 @@ exclude = [".github"]
 description = "A simple and easy-to-use cli tool inspired by du to find out the disk usage of files/directories."
 
 [dependencies]
-clap = { version = "4.5.38", features = ["derive"] }
+clap = { version = "4.5.38", features = ["derive", "cargo"] }
 humansize = "2"
 ignore = "0.4.23"
 rayon = "1.10.0"

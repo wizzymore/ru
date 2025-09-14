@@ -1,4 +1,4 @@
-use clap::Parser;
+use clap::{Parser, crate_description, crate_version};
 use ignore::gitignore::Gitignore;
 use rayon::prelude::*;
 #[cfg(windows)]
@@ -10,7 +10,7 @@ use std::{
 };
 
 #[derive(Parser, Debug)]
-#[command(version = None, about = "Estimate file space usage", long_about = None)]
+#[command(version = crate_version!(), about = crate_description!(), long_about = None)]
 struct Args {
     /// files/directories to analyze
     #[arg(value_name = "file")]
