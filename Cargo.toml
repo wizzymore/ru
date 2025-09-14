@@ -8,7 +8,7 @@ repository = "https://github.com/wizzymore/ru"
 license = "MIT"
 keywords = ["du", "filesystem", "cli"]
 categories = ["command-line-utilities"]
-exclude = [".github"]
+exclude = [".github", "Makefile"]
 description = "A simple and easy-to-use cli tool inspired by du to find out the disk usage of files/directories."
 
 [dependencies]
