@@ -9,6 +9,7 @@ license = "MIT"
 keywords = ["du", "gnu du", "disk space", "file size"]
 categories = ["command-line-utilities"]
 exclude = [".github"]
+description = "A du like command to measure directory and file sizes on disk"
 
 [dependencies]
 clap = { version = "4.5.38", features = ["derive"] }
