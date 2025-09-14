@@ -9,7 +9,7 @@ license = "MIT"
 keywords = ["du", "filesystem", "cli"]
 categories = ["command-line-utilities"]
 exclude = [".github"]
-description = "A du like command to measure directory and file sizes on disk"
+description = "A simple and easy-to-use cli tool inspired by du to find out the disk usage of files/directories."
 
 [dependencies]
 clap = { version = "4.5.38", features = ["derive"] }
