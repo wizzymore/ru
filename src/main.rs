@@ -78,7 +78,7 @@ fn main() {
     args.files
         .into_par_iter()
         .filter_map(|path| {
-            let (gitignore, _) = Gitignore::new(Path::new(&path).join(".gitignore").as_path());
+            let (gitignore, _) = Gitignore::new(Path::new(&path).join(".gitignore"));
 
             compute_size(path, &options, &gitignore)
         })
