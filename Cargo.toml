@@ -1,6 +1,6 @@
 [package]
 name = "ru"
-version = "0.1.5"
+version = "0.1.7"
 edition = "2024"
 authors = ["Cristian Bilu <cristian@eptic.ro>"]
 homepage = "https://eptic.ro/ru"
@@ -13,12 +13,13 @@ description = "A simple and easy-to-use cli tool inspired by du to find out the 
 
 [dependencies]
 clap = { version = "4.5.38", features = ["derive", "cargo"] }
+colored = "3.0.0"
 humansize = "2"
 ignore = "0.4.23"
 rayon = "1.10.0"
 
 [target.'cfg(windows)'.dependencies]
-windows-sys = { version = "0.60.2", features = [
+windows-sys = { version = "0.61.2", features = [
     "Win32_Storage_FileSystem",
     "Win32_Foundation",
 ] }

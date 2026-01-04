@@ -1,4 +1,5 @@
 use clap::{Parser, crate_description, crate_version};
+use colored::Colorize;
 use ignore::gitignore::Gitignore;
 use rayon::iter::*;
 #[cfg(windows)]
@@ -10,7 +11,7 @@ use std::{
 };
 
 #[derive(Parser, Debug)]
-#[command(version = crate_version!(), about = crate_description!(), long_about = None)]
+#[command(version = crate_version!(), about = crate_description!(), long_about = None, color = clap::ColorChoice::Always)]
 struct Args {
     /// files/directories to analyze
     #[arg(value_name = "file")]
@@ -31,6 +32,10 @@ struct Args {
     /// use .gitignore file for printing sizes
     #[arg(long, short, default_value_t = false)]
     ignore: bool,
+
+    /// use .gitignore file for printing sizes
+    #[arg(long, short = 'c', default_value_t = false)]
+    no_color: bool,
 }
 
 struct Options {
@@ -75,10 +80,14 @@ fn main() {
         args.files.push(".".to_string());
     }
 
+    if args.no_color {
+        colored::control::set_override(false);
+    }
+
     args.files
         .iter()
         .filter_map(|path| {
-            let (gitignore, _) = Gitignore::new(Path::new(&path).join(".gitignore").as_path());
+            let (gitignore, _) = Gitignore::new(Path::new(&path).join(".gitignore"));
 
             compute_size(path, &options, &gitignore)
         })
@@ -223,16 +232,17 @@ fn print_size<T: std::fmt::Display>(size: u64, path: T, print_bytes: bool) {
         println!("{size:<10} {path}");
     } else {
         #[cfg(target_os = "linux")]
-        println!(
-            "{:<10} {}",
-            humansize::format_size(size, humansize::BINARY),
-            path
-        );
+        let options = humansize::BINARY;
         #[cfg(not(target_os = "linux"))]
+        let options = humansize::DECIMAL;
+
         println!(
             "{:<10} {}",
-            humansize::format_size(size, humansize::DECIMAL),
-            path
+            humansize::format_size(size, options.space_after_value(false))
+                .to_string()
+                .yellow()
+                .bold(),
+            path.to_string().cyan().bold()
         );
     }
 }
