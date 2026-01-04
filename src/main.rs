@@ -1,6 +1,6 @@
 use clap::{Parser, crate_description, crate_version};
 use ignore::gitignore::Gitignore;
-use rayon::prelude::*;
+use rayon::iter::*;
 #[cfg(windows)]
 use std::fs::Metadata;
 use std::{
@@ -76,7 +76,7 @@ fn main() {
     }
 
     args.files
-        .into_par_iter()
+        .iter()
         .filter_map(|path| {
             let (gitignore, _) = Gitignore::new(Path::new(&path).join(".gitignore").as_path());
 
@@ -149,6 +149,42 @@ fn compute_size<P: AsRef<Path>>(
 }
 
 #[cfg(windows)]
+fn get_size_on_disk(path: &Path) -> u64 {
+    use std::os::windows::io::AsRawHandle;
+
+    use windows_sys::Win32::{
+        Foundation::HANDLE,
+        Storage::FileSystem::{FILE_STANDARD_INFO, FileStandardInfo, GetFileInformationByHandleEx},
+    };
+
+    let mut size_on_disk = 0;
+
+    // bind file so it stays in scope until end of function
+    // if it goes out of scope the handle below becomes invalid
+    let Ok(file) = std::fs::File::open(path) else {
+        return size_on_disk; // opening directories will fail
+    };
+
+    unsafe {
+        let mut file_info: FILE_STANDARD_INFO = core::mem::zeroed();
+        let file_info_ptr: *mut FILE_STANDARD_INFO = &mut file_info;
+
+        let success = GetFileInformationByHandleEx(
+            file.as_raw_handle() as HANDLE,
+            FileStandardInfo,
+            file_info_ptr.cast(),
+            core::mem::size_of::<FILE_STANDARD_INFO>() as u32,
+        );
+
+        if success != 0 {
+            size_on_disk = file_info.AllocationSize as u64;
+        }
+    }
+
+    size_on_disk
+}
+
+#[cfg(windows)]
 fn is_hidden(meta: &Metadata) -> bool {
     use std::os::windows::fs::MetadataExt;
 
@@ -199,40 +235,4 @@ fn print_size<T: std::fmt::Display>(size: u64, path: T, print_bytes: bool) {
             path
         );
     }
-}
-
-#[cfg(windows)]
-fn get_size_on_disk(path: &Path) -> u64 {
-    use std::os::windows::io::AsRawHandle;
-
-    use windows_sys::Win32::{
-        Foundation::HANDLE,
-        Storage::FileSystem::{FILE_STANDARD_INFO, FileStandardInfo, GetFileInformationByHandleEx},
-    };
-
-    let mut size_on_disk = 0;
-
-    // bind file so it stays in scope until end of function
-    // if it goes out of scope the handle below becomes invalid
-    let Ok(file) = std::fs::File::open(path) else {
-        return size_on_disk; // opening directories will fail
-    };
-
-    unsafe {
-        let mut file_info: FILE_STANDARD_INFO = core::mem::zeroed();
-        let file_info_ptr: *mut FILE_STANDARD_INFO = &mut file_info;
-
-        let success = GetFileInformationByHandleEx(
-            file.as_raw_handle() as HANDLE,
-            FileStandardInfo,
-            file_info_ptr.cast(),
-            core::mem::size_of::<FILE_STANDARD_INFO>() as u32,
-        );
-
-        if success != 0 {
-            size_on_disk = file_info.AllocationSize as u64;
-        }
-    }
-
-    size_on_disk
 }
