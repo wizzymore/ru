@@ -61,7 +61,7 @@ struct Entry {
 impl Entry {
     fn size(&self) -> u64 {
         match &self.kind {
-            EntryKind::File(size) => *size,
+            &EntryKind::File(size) => size,
             EntryKind::Dir(children) => children.iter().map(|e| e.size()).sum(),
         }
     }
