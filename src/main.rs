@@ -2,8 +2,6 @@ use clap::{Parser, crate_description, crate_version};
 use colored::Colorize;
 use ignore::gitignore::Gitignore;
 use rayon::iter::*;
-#[cfg(windows)]
-use std::fs::Metadata;
 use std::{
     fmt::Debug,
     fs,
@@ -14,7 +12,7 @@ use std::{
 #[command(version = crate_version!(), about = crate_description!(), long_about = None, color = clap::ColorChoice::Always)]
 struct Args {
     /// files/directories to analyze
-    #[arg(value_name = "path")]
+    #[arg(value_name = "path", default_value = ".")]
     files: Vec<String>,
 
     /// maximum print depth
@@ -68,17 +66,13 @@ impl Entry {
 }
 
 fn main() {
-    let mut args = Args::parse();
+    let args = Args::parse();
     let options = Options {
         max_depth: args.depth,
         bytes: args.bytes,
         sort: args.sort,
         ignore: args.ignore,
     };
-
-    if args.files.is_empty() {
-        args.files.push(".".to_string());
-    }
 
     if args.no_color {
         colored::control::set_override(false);
@@ -91,10 +85,8 @@ fn main() {
 
             compute_size(path, &options, &gitignore)
         })
-        .collect::<Vec<_>>()
-        .iter_mut()
-        .for_each(|root_entry| {
-            print_entry(root_entry, &options, 0);
+        .for_each(|mut root_entry| {
+            print_entry(&mut root_entry, &options, 0);
         });
 }
 
@@ -194,7 +186,7 @@ fn get_size_on_disk(path: &Path) -> u64 {
 }
 
 #[cfg(windows)]
-fn is_hidden(meta: &Metadata) -> bool {
+fn is_hidden(meta: &std::fs::Metadata) -> bool {
     use std::os::windows::fs::MetadataExt;
 
     meta.file_attributes() & 0x2 != 0
