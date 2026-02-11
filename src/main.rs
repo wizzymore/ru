@@ -14,7 +14,7 @@ use std::{
 #[command(version = crate_version!(), about = crate_description!(), long_about = None, color = clap::ColorChoice::Always)]
 struct Args {
     /// files/directories to analyze
-    #[arg(value_name = "file")]
+    #[arg(value_name = "path")]
     files: Vec<String>,
 
     /// maximum print depth
@@ -33,7 +33,7 @@ struct Args {
     #[arg(long, short, default_value_t = false)]
     ignore: bool,
 
-    /// use .gitignore file for printing sizes
+    /// don't display colored output
     #[arg(long, short = 'c', default_value_t = false)]
     no_color: bool,
 }
