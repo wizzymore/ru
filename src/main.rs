@@ -43,26 +43,18 @@ struct Options {
     ignore: bool,
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Clone)]
 enum EntryKind {
-    File(u64),
+    File,
     Dir(Vec<Entry>),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq)]
 struct Entry {
     path: PathBuf,
     hidden: bool,
     kind: EntryKind,
-}
-
-impl Entry {
-    fn size(&self) -> u64 {
-        match &self.kind {
-            &EntryKind::File(size) => size,
-            EntryKind::Dir(children) => children.iter().map(|e| e.size()).sum(),
-        }
-    }
+    size: u64,
 }
 
 fn main() {
@@ -78,16 +70,89 @@ fn main() {
         colored::control::set_override(false);
     }
 
-    args.files
-        .iter()
-        .filter_map(|path| {
-            let (gitignore, _) = Gitignore::new(Path::new(&path).join(".gitignore"));
+    if args.sort {
+        args.files
+            .iter()
+            .filter_map(|path| {
+                let (gitignore, _) = Gitignore::new(Path::new(path).join(".gitignore"));
 
-            compute_size(path, &options, &gitignore)
-        })
-        .for_each(|mut root_entry| {
-            print_entry(&mut root_entry, &options, 0);
+                compute_size(path, &options, &gitignore)
+            })
+            .for_each(|mut root_entry| {
+                print_entry(&mut root_entry, &options, 0);
+            });
+    } else {
+        args.files.iter().for_each(|path| {
+            let (gitignore, _) = Gitignore::new(Path::new(path).join(".gitignore"));
+            print_path(path, 0, &options, &gitignore);
         });
+    }
+}
+
+fn print_path<P: AsRef<Path>>(
+    path: P,
+    depth: usize,
+    options: &Options,
+    gitignore: &Gitignore,
+) -> u64 {
+    let path = path.as_ref();
+    let meta = match fs::symlink_metadata(path) {
+        Ok(meta) => meta,
+        Err(e) => {
+            eprintln!("{}: {}", path.display(), e);
+            return 0;
+        }
+    };
+
+    if options.ignore {
+        #[cfg(windows)]
+        let hidden = gitignore.matched(path, meta.is_dir()).is_ignore() || is_hidden(&meta);
+        #[cfg(not(windows))]
+        let hidden = gitignore.matched(path, meta.is_dir()).is_ignore() || is_hidden(path);
+
+        if hidden {
+            return 0;
+        }
+    };
+
+    if meta.is_file() {
+        return get_file_size(&meta, path);
+    } else if meta.is_dir() {
+        match fs::read_dir(path) {
+            Ok(entries) => {
+                let size = entries
+                    .par_bridge()
+                    .map(|entry| match entry {
+                        Ok(entry) => print_path(entry.path(), depth + 1, options, gitignore),
+                        Err(e) => {
+                            eprintln!("{}", e);
+                            0
+                        }
+                    })
+                    .sum();
+                if options.max_depth >= depth {
+                    print_size(size, path.display(), options.bytes);
+                }
+                return size;
+            }
+            Err(e) => {
+                match e.kind() {
+                    std::io::ErrorKind::PermissionDenied => {
+                        eprintln!("{}: Permission denied", path.display())
+                    }
+                    std::io::ErrorKind::NotFound => {
+                        eprintln!("{}: Not found", path.display())
+                    }
+                    _ => {
+                        eprintln!("{}: {}", path.display(), e)
+                    }
+                }
+                return 0;
+            }
+        }
+    }
+
+    0
 }
 
 fn compute_size<P: AsRef<Path>>(
@@ -110,25 +175,13 @@ fn compute_size<P: AsRef<Path>>(
     };
 
     if meta.is_file() {
-        let size;
-        #[cfg(not(windows))]
-        {
-            use std::os::unix::fs::MetadataExt;
-            size = meta.blocks() * 512;
-        }
-        #[cfg(windows)]
-        {
-            size = get_size_on_disk(path);
-        }
-
         return Some(Entry {
             path: path.to_path_buf(),
             hidden,
-            kind: EntryKind::File(size),
+            kind: EntryKind::File,
+            size: get_file_size(&meta, path),
         });
-    }
-
-    if meta.is_dir() {
+    } else if meta.is_dir() {
         let entries = fs::read_dir(path).ok()?;
 
         let children: Vec<Entry> = entries
@@ -142,11 +195,33 @@ fn compute_size<P: AsRef<Path>>(
         return Some(Entry {
             path: path.to_path_buf(),
             hidden,
-            kind: EntryKind::Dir(children),
+            size: children.iter().map(|e| e.size).sum(),
+            kind: EntryKind::Dir(
+                children
+                    .iter()
+                    .filter(|e| matches!(e.kind, EntryKind::Dir(_)))
+                    .cloned()
+                    .collect(),
+            ),
         });
     }
 
     None
+}
+
+fn get_file_size(meta: &fs::Metadata, path: &Path) -> u64 {
+    let size;
+    #[cfg(not(windows))]
+    {
+        _ = path;
+        use std::os::unix::fs::MetadataExt;
+        size = meta.blocks() * 512;
+    }
+    #[cfg(windows)]
+    {
+        size = get_size_on_disk(path);
+    }
+    size
 }
 
 #[cfg(windows)]
@@ -207,7 +282,7 @@ fn print_entry(entry: &mut Entry, options: &Options, depth: usize) {
 
     if let EntryKind::Dir(children) = &mut entry.kind {
         if options.sort && children.len() > 1 {
-            children.sort_unstable_by_key(|a| a.size());
+            children.sort_unstable_by_key(|a| a.size);
         }
 
         for child in children {
@@ -215,22 +290,27 @@ fn print_entry(entry: &mut Entry, options: &Options, depth: usize) {
                 print_entry(child, options, depth + 1);
             }
         }
+        print_size(entry.size, entry.path.display(), options.bytes);
+    } else {
+        if depth == 0 {
+            print_size(entry.size, entry.path.display(), options.bytes);
+        }
     }
-    print_size(entry.size(), entry.path.display(), options.bytes);
 }
+
+#[cfg(target_os = "linux")]
+const HUMAN_SIZE: humansize::FormatSizeOptions = humansize::BINARY;
+
+#[cfg(not(target_os = "linux"))]
+const HUMAN_SIZE: humansize::FormatSizeOptions = humansize::DECIMAL;
 
 fn print_size<T: std::fmt::Display>(size: u64, path: T, print_bytes: bool) {
     if print_bytes {
         println!("{size:<10} {path}");
     } else {
-        #[cfg(target_os = "linux")]
-        let options = humansize::BINARY;
-        #[cfg(not(target_os = "linux"))]
-        let options = humansize::DECIMAL;
-
         println!(
             "{:<10} {}",
-            humansize::format_size(size, options.space_after_value(false))
+            humansize::format_size(size, HUMAN_SIZE.space_after_value(false))
                 .to_string()
                 .yellow()
                 .bold(),
