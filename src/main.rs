@@ -115,9 +115,7 @@ fn print_path<P: AsRef<Path>>(
         }
     };
 
-    if meta.is_file() {
-        return get_file_size(&meta, path);
-    } else if meta.is_dir() {
+    if meta.is_dir() {
         match fs::read_dir(path) {
             Ok(entries) => {
                 let size = entries
@@ -152,7 +150,11 @@ fn print_path<P: AsRef<Path>>(
         }
     }
 
-    0
+    let size = get_file_size(&meta, path);
+    if depth == 0 {
+        print_size(size, path.display(), options.bytes);
+    }
+    return size;
 }
 
 fn compute_size<P: AsRef<Path>>(
