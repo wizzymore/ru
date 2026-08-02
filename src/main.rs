@@ -1,12 +1,7 @@
 use clap::{Parser, crate_description, crate_version};
-use colored::Colorize;
 use ignore::gitignore::Gitignore;
 use rayon::iter::*;
-use std::{
-    fmt::Debug,
-    fs,
-    path::{Path, PathBuf},
-};
+use std::{fmt::Debug, fs, path::Path};
 
 #[derive(Parser, Debug)]
 #[command(version = crate_version!(), about = crate_description!(), long_about = None, color = clap::ColorChoice::Always)]
@@ -16,16 +11,12 @@ struct Args {
     files: Vec<String>,
 
     /// maximum print depth
-    #[arg(short, default_value_t = 1)]
-    depth: usize,
+    #[arg(short, default_value = None)]
+    depth: Option<usize>,
 
     /// print bytes
     #[arg(short, default_value_t = false)]
     bytes: bool,
-
-    /// sort sizes
-    #[arg(long, default_value_t = false)]
-    sort: bool,
 
     /// use .gitignore file for printing sizes
     #[arg(long, short, default_value_t = false)]
@@ -37,24 +28,10 @@ struct Args {
 }
 
 struct Options {
-    max_depth: usize,
+    max_depth: Option<usize>,
     bytes: bool,
-    sort: bool,
     ignore: bool,
-}
-
-#[derive(Debug, PartialEq, Clone)]
-enum EntryKind {
-    File,
-    Dir(Vec<Entry>),
-}
-
-#[derive(Debug, Clone, PartialEq)]
-struct Entry {
-    path: PathBuf,
-    hidden: bool,
-    kind: EntryKind,
-    size: u64,
+    no_color: bool,
 }
 
 fn main() {
@@ -62,31 +39,14 @@ fn main() {
     let options = Options {
         max_depth: args.depth,
         bytes: args.bytes,
-        sort: args.sort,
         ignore: args.ignore,
+        no_color: args.no_color,
     };
 
-    if args.no_color {
-        colored::control::set_override(false);
-    }
-
-    if args.sort {
-        args.files
-            .iter()
-            .filter_map(|path| {
-                let (gitignore, _) = Gitignore::new(Path::new(path).join(".gitignore"));
-
-                compute_size(path, &options, &gitignore)
-            })
-            .for_each(|mut root_entry| {
-                print_entry(&mut root_entry, &options, 0);
-            });
-    } else {
-        args.files.iter().for_each(|path| {
-            let (gitignore, _) = Gitignore::new(Path::new(path).join(".gitignore"));
-            print_path(path, 0, &options, &gitignore);
-        });
-    }
+    args.files.iter().for_each(|path| {
+        let (gitignore, _) = Gitignore::new(Path::new(path).join(".gitignore"));
+        print_path(path, 0, &options, &gitignore);
+    });
 }
 
 fn print_path<P: AsRef<Path>>(
@@ -128,8 +88,8 @@ fn print_path<P: AsRef<Path>>(
                         }
                     })
                     .sum();
-                if options.max_depth >= depth {
-                    print_size(size, path.display(), options.bytes);
+                if options.max_depth.is_none_or(|d| d >= depth) {
+                    print_size(size, path.display(), options.bytes, options.no_color);
                 }
                 return size;
             }
@@ -152,63 +112,11 @@ fn print_path<P: AsRef<Path>>(
 
     let size = get_file_size(&meta, path);
     if depth == 0 {
-        print_size(size, path.display(), options.bytes);
-    }
-    return size;
-}
-
-fn compute_size<P: AsRef<Path>>(
-    path: P,
-    options: &Options,
-    gitignore: &Gitignore,
-) -> Option<Entry> {
-    let path = path.as_ref();
-    let meta = fs::symlink_metadata(path).ok()?;
-
-    let hidden = if options.ignore {
-        #[cfg(windows)]
-        let hidden = gitignore.matched(path, meta.is_dir()).is_ignore() || is_hidden(&meta);
-        #[cfg(not(windows))]
-        let hidden = gitignore.matched(path, meta.is_dir()).is_ignore() || is_hidden(path);
-
-        hidden
-    } else {
-        false
-    };
-
-    if meta.is_file() {
-        return Some(Entry {
-            path: path.to_path_buf(),
-            hidden,
-            kind: EntryKind::File,
-            size: get_file_size(&meta, path),
-        });
-    } else if meta.is_dir() {
-        let entries = fs::read_dir(path).ok()?;
-
-        let children: Vec<Entry> = entries
-            .par_bridge()
-            .filter_map(|res| {
-                let entry = res.ok()?;
-                compute_size(entry.path(), options, gitignore)
-            })
-            .collect();
-
-        return Some(Entry {
-            path: path.to_path_buf(),
-            hidden,
-            size: children.iter().map(|e| e.size).sum(),
-            kind: EntryKind::Dir(
-                children
-                    .iter()
-                    .filter(|e| matches!(e.kind, EntryKind::Dir(_)))
-                    .cloned()
-                    .collect(),
-            ),
-        });
+        std::hint::cold_path();
+        print_size(size, path.display(), options.bytes, options.no_color);
     }
 
-    None
+    size
 }
 
 fn get_file_size(meta: &fs::Metadata, path: &Path) -> u64 {
@@ -277,46 +185,28 @@ fn is_hidden(path: &Path) -> bool {
         .unwrap_or(false)
 }
 
-fn print_entry(entry: &mut Entry, options: &Options, depth: usize) {
-    if options.max_depth < depth {
-        return;
-    }
-
-    if let EntryKind::Dir(children) = &mut entry.kind {
-        if options.sort && children.len() > 1 {
-            children.sort_unstable_by_key(|a| a.size);
-        }
-
-        for child in children {
-            if !child.hidden {
-                print_entry(child, options, depth + 1);
-            }
-        }
-        print_size(entry.size, entry.path.display(), options.bytes);
-    } else {
-        if depth == 0 {
-            print_size(entry.size, entry.path.display(), options.bytes);
-        }
-    }
-}
-
 #[cfg(target_os = "linux")]
 const HUMAN_SIZE: humansize::FormatSizeOptions = humansize::BINARY;
 
 #[cfg(not(target_os = "linux"))]
 const HUMAN_SIZE: humansize::FormatSizeOptions = humansize::DECIMAL;
 
-fn print_size<T: std::fmt::Display>(size: u64, path: T, print_bytes: bool) {
+fn print_size<T: std::fmt::Display>(size: u64, path: T, print_bytes: bool, print_no_color: bool) {
     if print_bytes {
-        println!("{size:<10} {path}");
+        if !print_no_color {
+            println!("\x1b[1;33m{:<10}\x1b[0m \x1b[1;36m{}\x1b[0m", size, path);
+        } else {
+            println!("{:<10} {}", size, path);
+        }
     } else {
-        println!(
-            "{:<10} {}",
-            humansize::format_size(size, HUMAN_SIZE.space_after_value(false))
-                .to_string()
-                .yellow()
-                .bold(),
-            path.to_string().cyan().bold()
-        );
+        let humansize = humansize::format_size(size, HUMAN_SIZE.space_after_value(false));
+        if !print_no_color {
+            println!(
+                "\x1b[1;33m{:<10}\x1b[0m \x1b[1;36m{}\x1b[0m",
+                humansize, path
+            );
+        } else {
+            println!("{:<10} {}", humansize, path);
+        }
     }
 }
