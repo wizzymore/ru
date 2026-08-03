@@ -3,6 +3,8 @@ use ignore::gitignore::Gitignore;
 use rayon::iter::*;
 use std::{fmt::Debug, fs, path::Path};
 
+mod humanformat;
+
 #[derive(Parser, Debug)]
 #[command(version = crate_version!(), about = crate_description!(), long_about = None, color = clap::ColorChoice::Always)]
 struct Args {
@@ -186,10 +188,10 @@ fn is_hidden(path: &Path) -> bool {
 }
 
 #[cfg(target_os = "linux")]
-const HUMAN_SIZE: humansize::FormatSizeOptions = humansize::BINARY;
+const HUMAN_FORMAT: humanformat::Kilo = humanformat::Kilo::Binary;
 
 #[cfg(not(target_os = "linux"))]
-const HUMAN_SIZE: humansize::FormatSizeOptions = humansize::DECIMAL;
+const HUMAN_FORMAT: humanformat::Kilo = humanformat::Kilo::Decimal;
 
 fn print_size<T: std::fmt::Display>(size: u64, path: T, print_bytes: bool, print_no_color: bool) {
     if print_bytes {
@@ -199,14 +201,14 @@ fn print_size<T: std::fmt::Display>(size: u64, path: T, print_bytes: bool, print
             println!("{:<10} {}", size, path);
         }
     } else {
-        let humansize = humansize::format_size(size, HUMAN_SIZE.space_after_value(false));
+        let formatted_size = humanformat::format_size(size as f64, HUMAN_FORMAT);
         if !print_no_color {
             println!(
                 "\x1b[1;33m{:<10}\x1b[0m \x1b[1;36m{}\x1b[0m",
-                humansize, path
+                formatted_size, path
             );
         } else {
-            println!("{:<10} {}", humansize, path);
+            println!("{:<10} {}", formatted_size, path);
         }
     }
 }
