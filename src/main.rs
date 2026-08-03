@@ -50,7 +50,7 @@ fn main() {
         max_depth: args.depth,
         bytes: args.bytes,
         ignore: args.ignore,
-        no_color: !std::io::stdout().is_terminal() || !args.no_color,
+        no_color: !std::io::stdout().is_terminal() || args.no_color,
     };
 
     args.files.iter().for_each(|path| {
