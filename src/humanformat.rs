@@ -7,6 +7,7 @@ pub enum Kilo {
     #[default]
     Decimal,
     /// The binary scale and units.
+    #[cfg_attr(not(target_os = "linux"), expect(dead_code))]
     Binary,
 }
 
