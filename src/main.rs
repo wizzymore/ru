@@ -1,9 +1,17 @@
 use clap::{Parser, crate_description, crate_version};
 use ignore::gitignore::Gitignore;
 use rayon::iter::*;
+#[cfg(unix)]
+use std::{collections::HashSet, sync::Mutex};
 use std::{fmt::Debug, fs, path::Path};
 
 mod humanformat;
+
+#[cfg(unix)]
+type Visited = Mutex<HashSet<(u64, u64)>>;
+
+#[cfg(not(unix))]
+type Visited = ();
 
 #[derive(Parser, Debug)]
 #[command(version = crate_version!(), about = crate_description!(), long_about = None, color = clap::ColorChoice::Always)]
@@ -47,15 +55,42 @@ fn main() {
 
     args.files.iter().for_each(|path| {
         let (gitignore, _) = Gitignore::new(Path::new(path).join(".gitignore"));
-        print_path(path, 0, &options, &gitignore);
+        visit_path(path, &options, &gitignore);
     });
 }
 
-fn print_path<P: AsRef<Path>>(
+fn visit_path<P: AsRef<Path>>(path: P, options: &Options, gitignore: &Gitignore) {
+    #[cfg(unix)]
+    let visited = Visited::new(HashSet::new());
+    #[cfg(not(unix))]
+    let visited = ();
+
+    compute_usage(path, 0, options, gitignore, &visited);
+}
+
+#[cfg(unix)]
+fn should_count(meta: &fs::Metadata, visited: &Visited) -> bool {
+    use std::os::unix::fs::MetadataExt;
+    if meta.nlink() <= 1 {
+        return true;
+    }
+
+    let key = (meta.dev(), meta.ino());
+
+    visited.lock().unwrap().insert(key)
+}
+
+#[cfg(not(unix))]
+fn should_count(_: &fs::Metadata, _: &Visited) -> bool {
+    true
+}
+
+fn compute_usage<P: AsRef<Path>>(
     path: P,
     depth: usize,
     options: &Options,
     gitignore: &Gitignore,
+    visited: &Visited,
 ) -> u64 {
     let path = path.as_ref();
     let meta = match fs::symlink_metadata(path) {
@@ -65,6 +100,10 @@ fn print_path<P: AsRef<Path>>(
             return 0;
         }
     };
+
+    if !should_count(&meta, visited) {
+        return 0;
+    }
 
     if options.ignore {
         #[cfg(windows)]
@@ -77,19 +116,23 @@ fn print_path<P: AsRef<Path>>(
         }
     };
 
+    let mut size = get_file_size(&meta, path);
+
     if meta.is_dir() {
         match fs::read_dir(path) {
             Ok(entries) => {
-                let size = entries
+                size += entries
                     .par_bridge()
                     .map(|entry| match entry {
-                        Ok(entry) => print_path(entry.path(), depth + 1, options, gitignore),
+                        Ok(entry) => {
+                            compute_usage(entry.path(), depth + 1, options, gitignore, visited)
+                        }
                         Err(e) => {
                             eprintln!("{}", e);
                             0
                         }
                     })
-                    .sum();
+                    .sum::<u64>();
                 if options.max_depth.is_none_or(|d| d >= depth) {
                     print_size(size, path.display(), options.bytes, options.no_color);
                 }
@@ -112,7 +155,6 @@ fn print_path<P: AsRef<Path>>(
         }
     }
 
-    let size = get_file_size(&meta, path);
     if depth == 0 {
         std::hint::cold_path();
         print_size(size, path.display(), options.bytes, options.no_color);
