@@ -1,16 +1,16 @@
 use clap::{Parser, crate_description, crate_version};
 use ignore::gitignore::Gitignore;
 use rayon::iter::*;
-#[cfg(unix)]
+#[cfg(target_os = "linux")]
 use std::{collections::HashSet, sync::Mutex};
 use std::{fmt::Debug, fs, io::IsTerminal, path::Path};
 
 mod humanformat;
 
-#[cfg(unix)]
+#[cfg(target_os = "linux")]
 type Visited = Mutex<HashSet<(u64, u64)>>;
 
-#[cfg(not(unix))]
+#[cfg(not(target_os = "linux"))]
 type Visited = ();
 
 #[derive(Parser, Debug)]
@@ -60,15 +60,15 @@ fn main() {
 }
 
 fn visit_path<P: AsRef<Path>>(path: P, options: &Options, gitignore: &Gitignore) {
-    #[cfg(unix)]
+    #[cfg(target_os = "linux")]
     let visited = Visited::new(HashSet::new());
-    #[cfg(not(unix))]
+    #[cfg(not(target_os = "linux"))]
     let visited = ();
 
     compute_usage(path, 0, options, gitignore, &visited);
 }
 
-#[cfg(unix)]
+#[cfg(target_os = "linux")]
 fn should_count(meta: &fs::Metadata, visited: &Visited) -> bool {
     use std::os::unix::fs::MetadataExt;
     if meta.nlink() <= 1 {
@@ -80,7 +80,7 @@ fn should_count(meta: &fs::Metadata, visited: &Visited) -> bool {
     visited.lock().unwrap().insert(key)
 }
 
-#[cfg(not(unix))]
+#[cfg(not(target_os = "linux"))]
 fn should_count(_: &fs::Metadata, _: &Visited) -> bool {
     true
 }
