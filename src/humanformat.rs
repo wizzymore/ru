@@ -49,14 +49,9 @@ impl<T: Into<f64> + Copy, O: AsRef<Kilo>> core::fmt::Display for ISizeFormatter<
             scale_idx += 1;
         }
 
-        let mut scale = UNITS[scale_idx];
+        let places = if size <= 10.0 { 1 } else { 0 };
 
-        // Remove "s" from the scale if the size is 1.x
-        if size.fract() == 1.0 {
-            scale = &scale[0..scale.len() - 1];
-        }
-
-        write!(f, "{:.2}{}", size, scale)
+        write!(f, "{:.*}{}", places, size, UNITS[scale_idx])
     }
 }
 
