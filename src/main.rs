@@ -3,7 +3,7 @@ use ignore::gitignore::Gitignore;
 use rayon::iter::*;
 #[cfg(unix)]
 use std::{collections::HashSet, sync::Mutex};
-use std::{fmt::Debug, fs, path::Path};
+use std::{fmt::Debug, fs, io::IsTerminal, path::Path};
 
 mod humanformat;
 
@@ -50,7 +50,7 @@ fn main() {
         max_depth: args.depth,
         bytes: args.bytes,
         ignore: args.ignore,
-        no_color: args.no_color,
+        no_color: !std::io::stdout().is_terminal() || !args.no_color,
     };
 
     args.files.iter().for_each(|path| {
