@@ -37,6 +37,7 @@ struct Args {
     no_color: bool,
 }
 
+#[derive(Debug)]
 struct Options {
     max_depth: Option<usize>,
     bytes: bool,
@@ -45,6 +46,11 @@ struct Options {
 }
 
 fn main() {
+    #[cfg(unix)]
+    unsafe {
+        libc::setlocale(libc::LC_ALL, c"".as_ptr());
+    }
+
     let args = Args::parse();
     let options = Options {
         max_depth: args.depth,

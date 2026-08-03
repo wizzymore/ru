@@ -66,7 +66,32 @@ impl<T: ToF64, O: AsRef<Kilo>> core::fmt::Display for ISizeFormatter<T, O> {
             scale_idx += 1;
         }
 
-        let places = if size <= 10.0 { 1 } else { 0 };
+        let places: usize = match size {
+            10.0.. => 0,
+            _ => 1,
+        };
+
+        if places == 0 {
+            return write!(f, "{:.0}{}", size, UNITS[scale_idx]);
+        }
+
+        if cfg!(unix) {
+            unsafe {
+                let conv = libc::localeconv();
+                let decimal = std::ffi::CStr::from_ptr((*conv).decimal_point)
+                    .to_str()
+                    .unwrap_or(".");
+
+                return write!(
+                    f,
+                    "{:.0}{}{:.0}{}",
+                    size.trunc(),
+                    decimal,
+                    size.fract() * (10 * places) as f64,
+                    UNITS[scale_idx]
+                );
+            }
+        }
 
         write!(f, "{:.*}{}", places, size, UNITS[scale_idx])
     }
