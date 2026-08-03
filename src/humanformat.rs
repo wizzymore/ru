@@ -59,6 +59,11 @@ impl<T: ToF64, O: AsRef<Kilo>> core::fmt::Display for ISizeFormatter<T, O> {
         let divider = opts.value();
 
         let mut size: f64 = self.value.to_f64();
+
+        if size == 0.0 {
+            return write!(f, "{:.0}", size);
+        }
+
         let mut scale_idx = 0;
 
         while size.abs() >= divider {
