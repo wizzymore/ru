@@ -26,23 +26,39 @@ impl Kilo {
     }
 }
 
-pub struct ISizeFormatter<T: Into<f64> + Copy, O: AsRef<Kilo>> {
+pub trait ToF64 {
+    fn to_f64(&self) -> f64;
+}
+
+macro_rules! impl_to_f64 {
+  (for $($t:ty)*) => ($(
+      impl ToF64 for $t {
+          fn to_f64(&self) -> f64 {
+              *self as f64
+          }
+      }
+  )*)
+}
+
+impl_to_f64!(for usize u8 u16 u32 u64 isize i8 i16 i32 i64 f32 f64);
+
+pub struct ISizeFormatter<T: ToF64, O: AsRef<Kilo>> {
     value: T,
     options: O,
 }
 
-impl<V: Into<f64> + Copy, O: AsRef<Kilo>> ISizeFormatter<V, O> {
+impl<V: ToF64, O: AsRef<Kilo>> ISizeFormatter<V, O> {
     pub fn new(value: V, options: O) -> Self {
         ISizeFormatter { value, options }
     }
 }
 
-impl<T: Into<f64> + Copy, O: AsRef<Kilo>> core::fmt::Display for ISizeFormatter<T, O> {
+impl<T: ToF64, O: AsRef<Kilo>> core::fmt::Display for ISizeFormatter<T, O> {
     fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
         let opts = self.options.as_ref();
         let divider = opts.value();
 
-        let mut size: f64 = self.value.into();
+        let mut size: f64 = self.value.to_f64();
         let mut scale_idx = 0;
 
         while size.abs() >= divider {
@@ -56,10 +72,6 @@ impl<T: Into<f64> + Copy, O: AsRef<Kilo>> core::fmt::Display for ISizeFormatter<
     }
 }
 
-pub fn format_size_i(input: impl Into<f64> + Copy, options: impl AsRef<Kilo>) -> String {
+pub fn format_size(input: impl ToF64, options: impl AsRef<Kilo>) -> String {
     format!("{}", ISizeFormatter::new(input, options))
-}
-
-pub fn format_size(input: impl Into<f64> + Copy, options: impl AsRef<Kilo>) -> String {
-    format_size_i(input, &options)
 }
