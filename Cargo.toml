@@ -12,9 +12,9 @@ exclude = [".github", "Makefile"]
 description = "A simple and easy-to-use cli tool inspired by du to find out the disk usage of files/directories."
 
 [dependencies]
-clap = { version = "4.5.38", features = ["derive", "cargo"] }
-ignore = "0.4.23"
-rayon = "1.10.0"
+clap = { version = "4.6.7", features = ["derive", "cargo"] }
+ignore = "0.4.33"
+rayon = "1.12.0"
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2.189"
