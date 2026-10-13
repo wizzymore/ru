@@ -22,6 +22,22 @@ Use the tool with the `ru` binary:
 ru .
 ```
 
+Use `--json` to print a JSON array instead of the default text output:
+
+```shell
+ru --json .
+```
+
+Each array entry has a `path` string and an integer `size_bytes` value. Paths use
+the same display form as text output, and entries are sorted by path. The byte
+count uses the same on-disk usage measurement as the text output. Depth and
+`--ignore` options apply in JSON mode; `--bytes` and color options do not change
+the JSON data.
+
+Filesystem diagnostics are written to stderr. If traversal encounters an error,
+`ru --json` still writes a valid JSON array to stdout and exits with a nonzero
+status.
+
 ### Contributing
 
 Issues are welcome, if you find a bug and want to report it I will be pleased to fix it if i have the time for it.  

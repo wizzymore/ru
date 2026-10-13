@@ -105,3 +105,37 @@ impl<T: ToF64, O: AsRef<Kilo>> core::fmt::Display for ISizeFormatter<T, O> {
 pub fn format_size(input: impl ToF64, options: impl AsRef<Kilo>) -> String {
     format!("{}", ISizeFormatter::new(input, options))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::{Kilo, format_size};
+
+    #[test]
+    fn decimal_sizes_use_human_readable_units() {
+        for (bytes, expected) in [
+            (0, "0"),
+            (1, "1.0B"),
+            (12, "12B"),
+            (999, "999B"),
+            (1000, "1.0K"),
+            (10_000, "10K"),
+            (1_000_000, "1.0M"),
+        ] {
+            assert_eq!(format_size(bytes, Kilo::Decimal), expected, "{bytes} bytes");
+        }
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn linux_binary_sizes_change_units_at_powers_of_1024() {
+        for (bytes, expected) in [
+            (0, "0"),
+            (1023, "1023B"),
+            (1024, "1.0K"),
+            (10_240, "10K"),
+            (1_048_576, "1.0M"),
+        ] {
+            assert_eq!(format_size(bytes, Kilo::Binary), expected, "{bytes} bytes");
+        }
+    }
+}

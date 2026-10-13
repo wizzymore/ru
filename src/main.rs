@@ -1,6 +1,9 @@
 use clap::{Parser, crate_description, crate_version};
 use ignore::gitignore::Gitignore;
 use rayon::iter::*;
+#[cfg(not(target_os = "linux"))]
+use std::sync::Mutex;
+use std::sync::atomic::{AtomicBool, Ordering};
 #[cfg(target_os = "linux")]
 use std::{collections::HashSet, sync::Mutex};
 use std::{fmt::Debug, fs, io::IsTerminal, path::Path};
@@ -25,7 +28,7 @@ struct Args {
     depth: Option<usize>,
 
     /// print bytes
-    #[arg(short, default_value_t = false)]
+    #[arg(short, long, default_value_t = false)]
     bytes: bool,
 
     /// use .gitignore file for printing sizes
@@ -35,6 +38,10 @@ struct Args {
     /// don't display colored output
     #[arg(long, short = 'c', default_value_t = false)]
     no_color: bool,
+
+    /// print results as a JSON array
+    #[arg(long, default_value_t = false)]
+    json: bool,
 }
 
 #[derive(Debug)]
@@ -43,9 +50,22 @@ struct Options {
     bytes: bool,
     ignore: bool,
     no_color: bool,
+    json: bool,
 }
 
-fn main() {
+#[derive(Debug, Default)]
+struct Output {
+    json_entries: Mutex<Vec<JsonEntry>>,
+    had_errors: AtomicBool,
+}
+
+#[derive(Debug, serde::Serialize)]
+struct JsonEntry {
+    path: String,
+    size_bytes: u64,
+}
+
+fn main() -> std::process::ExitCode {
     #[cfg(unix)]
     unsafe {
         libc::setlocale(libc::LC_ALL, c"".as_ptr());
@@ -57,21 +77,35 @@ fn main() {
         bytes: args.bytes,
         ignore: args.ignore,
         no_color: !std::io::stdout().is_terminal() || args.no_color,
+        json: args.json,
     };
+    let output = Output::default();
 
     args.files.iter().for_each(|path| {
         let (gitignore, _) = Gitignore::new(Path::new(path).join(".gitignore"));
-        visit_path(path, &options, &gitignore);
+        visit_path(path, &options, &gitignore, &output);
     });
+
+    if options.json {
+        let mut entries = output.json_entries.lock().unwrap();
+        entries.sort_by(|left, right| left.path.cmp(&right.path));
+        println!("{}", serde_json::to_string(&*entries).unwrap());
+
+        if output.had_errors.load(Ordering::Relaxed) {
+            return std::process::ExitCode::FAILURE;
+        }
+    }
+
+    std::process::ExitCode::SUCCESS
 }
 
-fn visit_path<P: AsRef<Path>>(path: P, options: &Options, gitignore: &Gitignore) {
+fn visit_path<P: AsRef<Path>>(path: P, options: &Options, gitignore: &Gitignore, output: &Output) {
     #[cfg(target_os = "linux")]
     let visited = Visited::new(HashSet::new());
     #[cfg(not(target_os = "linux"))]
     let visited = ();
 
-    compute_usage(path, 0, options, gitignore, &visited);
+    compute_usage(path, 0, options, gitignore, &visited, output);
 }
 
 #[cfg(target_os = "linux")]
@@ -97,11 +131,13 @@ fn compute_usage<P: AsRef<Path>>(
     options: &Options,
     gitignore: &Gitignore,
     visited: &Visited,
+    output: &Output,
 ) -> u64 {
     let path = path.as_ref();
     let meta = match fs::symlink_metadata(path) {
         Ok(meta) => meta,
         Err(e) => {
+            output.had_errors.store(true, Ordering::Relaxed);
             eprintln!("{}: {}", path.display(), e);
             return 0;
         }
@@ -130,21 +166,28 @@ fn compute_usage<P: AsRef<Path>>(
                 size += entries
                     .par_bridge()
                     .map(|entry| match entry {
-                        Ok(entry) => {
-                            compute_usage(entry.path(), depth + 1, options, gitignore, visited)
-                        }
+                        Ok(entry) => compute_usage(
+                            entry.path(),
+                            depth + 1,
+                            options,
+                            gitignore,
+                            visited,
+                            output,
+                        ),
                         Err(e) => {
+                            output.had_errors.store(true, Ordering::Relaxed);
                             eprintln!("{}", e);
                             0
                         }
                     })
                     .sum::<u64>();
                 if options.max_depth.is_none_or(|d| d >= depth) {
-                    print_size(size, path.display(), options.bytes, options.no_color);
+                    record_size(size, path, options, output);
                 }
                 return size;
             }
             Err(e) => {
+                output.had_errors.store(true, Ordering::Relaxed);
                 match e.kind() {
                     std::io::ErrorKind::PermissionDenied => {
                         eprintln!("{}: Permission denied", path.display())
@@ -163,10 +206,21 @@ fn compute_usage<P: AsRef<Path>>(
 
     if depth == 0 {
         std::hint::cold_path();
-        print_size(size, path.display(), options.bytes, options.no_color);
+        record_size(size, path, options, output);
     }
 
     size
+}
+
+fn record_size(size: u64, path: &Path, options: &Options, output: &Output) {
+    if options.json {
+        output.json_entries.lock().unwrap().push(JsonEntry {
+            path: path.display().to_string(),
+            size_bytes: size,
+        });
+    } else {
+        print_size(size, path.display(), options.bytes, options.no_color);
+    }
 }
 
 fn get_file_size(meta: &fs::Metadata, path: &Path) -> u64 {
