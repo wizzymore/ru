@@ -10,7 +10,13 @@ The motivation behind this project is to have a safe, performant and cross platf
 
 ### Usage
 
-Install the tool:
+Install the latest prebuilt binary (Linux, macOS):
+
+```shell
+curl -fsSL https://releases.eptic.ro/ru.sh | sh
+```
+
+Or build it with cargo:
 
 ```shell
 cargo install ru
