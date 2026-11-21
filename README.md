@@ -22,6 +22,11 @@ Or build it with cargo:
 cargo install ru
 ```
 
+To update a binary installed with the script, run `ru --update`. Once a day,
+`ru` checks for a new release in the background and prints a notice to stderr
+when one is available. The check is skipped with `--json`, when stderr is not a
+terminal, in CI, or when `RU_NO_UPDATE_CHECK` is set.
+
 Use the tool with the `ru` binary:
 
 ```shell

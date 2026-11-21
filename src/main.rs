@@ -9,6 +9,7 @@ use std::{collections::HashSet, sync::Mutex};
 use std::{fmt::Debug, fs, io::IsTerminal, path::Path};
 
 mod humanformat;
+mod update;
 
 #[cfg(target_os = "linux")]
 type Visited = Mutex<HashSet<(u64, u64)>>;
@@ -42,6 +43,10 @@ struct Args {
     /// print results as a JSON array
     #[arg(long, default_value_t = false)]
     json: bool,
+
+    /// update ru to the latest release
+    #[arg(long, exclusive = true, default_value_t = false)]
+    update: bool,
 }
 
 #[derive(Debug)]
@@ -72,6 +77,11 @@ fn main() -> std::process::ExitCode {
     }
 
     let args = Args::parse();
+    if args.update {
+        return update::run_update();
+    }
+
+    let update_check = update::start_check(args.json);
     let options = Options {
         max_depth: args.depth,
         bytes: args.bytes,
@@ -94,6 +104,10 @@ fn main() -> std::process::ExitCode {
         if output.had_errors.load(Ordering::Relaxed) {
             return std::process::ExitCode::FAILURE;
         }
+    }
+
+    if let Some(check) = update_check {
+        check.finish();
     }
 
     std::process::ExitCode::SUCCESS
